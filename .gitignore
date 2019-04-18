@@ -3,3 +3,8 @@
 ################################################################################
 
 /Debug
+/.vs
+/Scheduler.vcxproj.user
+/Scheduler.vcxproj.filters
+/Scheduler.vcxproj
+/Scheduler.sln

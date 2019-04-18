@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 struct Node {
 	struct Node* next;
@@ -31,10 +32,9 @@ struct Node* allocate_node(long pktID, long time);
 struct Master_Queue master_queue;
 
 int main(int argc, char** argv) {
-	char* scheduler_type;
-	char* input_file; char* output_file; int default_weight; int quantum;
+	char* scheduler_type=NULL; char* input_file=NULL; char* output_file=NULL; int default_weight; int quantum;
 	if (argc != 6) {
-		printf("Wrong number of arguments provided!")
+		printf("Wrong number of arguments provided!");
 		return 1;
 	}
 	retrieve_arguments(scheduler_type, input_file, output_file, &default_weight, &quantum, argv);
@@ -51,6 +51,7 @@ struct Queue* allocate_queue(char* Sadd, unsigned int Sport, char *Dadd, unsigne
 	queue->Dport = Dport;
 	queue->length = length;
 	queue->weight = weight;
+	return queue;
 }
 
 struct Node* allocate_node(long pktID, long time) {
@@ -81,4 +82,5 @@ int retrieve_arguments(char* scheduler_type, char* input_file, char* output_file
 		printf("Bad quantum!\n");
 		return 1;
 	}
+	return 0;
 }

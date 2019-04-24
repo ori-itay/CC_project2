@@ -34,7 +34,7 @@ struct Node {
 struct Queue {
 	struct Node* head;
 	struct Node* tail;
-	struct Node* next;
+	struct Queue* next_queue;
 	unsigned int Sport;
 	unsigned int Dport;
 	char *Sadd;
@@ -50,11 +50,14 @@ struct Master_Queue {
 
 int retrieve_arguments(char* scheduler_type, char* input_file, char* output_file, int* default_weight, int* quantum, char** argv);
 void enqueue(struct PKT_Params *pkt_params);
+int dequeue();
 struct Queue* search_flow(struct PKT_Params *pkt_params);
 struct Queue* allocate_queue(struct PKT_Params *pkt_params);
 struct Node* allocate_node(struct PKT_Params *pkt_params);
 void invoke_WRR_scheduler(FILE *input_fp, FILE *output_fp, int default_weight);
-int read_line(struct PKT_Params *pkt_params, FILE *input_fp);
+void invoke_DRR_scheduler();
+int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight);
+void serve_packet(int* queue_serve_count);
 
 
 struct Master_Queue master_queue;
@@ -123,6 +126,26 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	return;
 }
 
+int dequeue() {
+	struct Node *tmp_node;
+	struct Queue *tmp_queue;
+	int ret = 0;
+
+	tmp_node = master_queue.head->head;
+
+	if (master_queue.head->head != master_queue.head->tail) {
+		master_queue.head->head = master_queue.head->head->next;
+	}
+	else {
+		tmp_queue = master_queue.head;
+		master_queue.head = master_queue.head->next_queue;
+		free(tmp_queue);
+		ret = 1;
+	}
+	free(tmp_node);
+	return ret;
+}
+
 struct Queue* search_flow(struct PKT_Params *pkt_params) {
 	struct Queue *curr_queue = master_queue.head;
 
@@ -157,18 +180,17 @@ int retrieve_arguments(char* scheduler_type, char* input_file, char* output_file
 
 void invoke_WRR_scheduler(FILE *input_fp, FILE * output_fp, int default_weight) {
 
-	int serve_count = 0;
+	int queue_serve_count = 0;
 	long int old_local_time = local_time;
 	struct PKT_Params pkt_params;
 
 	while (read_line(&pkt_params, input_fp, default_weight) == 0) {
 		while (pkt_params.Time >= local_time) {
 			if (old_local_time != local_time) {
-				serve_count = 0;
+				queue_serve_count = 0;
 				old_local_time = local_time;
 			}	
-			serve_packet(&serve_count);
-			serve_count++;
+			serve_packet(&queue_serve_count);
 		}
 		enqueue(&pkt_params); /* if the right queue exists, add the node. else, make new queue, add the node*/
 	}
@@ -227,17 +249,19 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 }
 
 
-void serve_packet(int* serve_count) {
+void serve_packet(int* queue_serve_count) {
+	int fin_queue;
 
 	if (master_queue.head == NULL)
 		return;
 	
 	/*write here to output file*/
-	dequeue(master_queue.head);
-	if (*serve_count == master_queue.head->weight) {
-		*serve_count = 0;
+	fin_queue = dequeue();
+	(*queue_serve_count)++;
+	if (*queue_serve_count == master_queue.head->weight || fin_queue) {
+		*queue_serve_count = 0;
 		master_queue.tail = master_queue.head;
-		master_queue.head = master_queue.head->next;
+		master_queue.head = master_queue.head->next_queue;
 	}
 
 }

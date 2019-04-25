@@ -128,7 +128,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	else if ((to_insert_queue = search_flow(pkt_params)) == NULL) {
 		/*new flow type*/
 		to_insert_queue = allocate_queue(pkt_params);
-		to_insert_queue->next_queue = master_queue.head;
+		//to_insert_queue->next_queue = master_queue.head; // problematic line?
 		master_queue.tail->next_queue = to_insert_queue;
 		master_queue.tail = master_queue.tail->next_queue;
 	}
@@ -189,10 +189,7 @@ int retrieve_arguments(char** scheduler_type, char** input_file, char** output_f
 		printf("Bad default weight!\n");
 		exit(1);
 	}
-	if ((*quantum = atoi(argv[5])) == 0) {
-		printf("Bad quantum!\n");
-		exit(1);
-	}
+	*quantum = atoi(argv[5]);
 	return 0;
 }
 

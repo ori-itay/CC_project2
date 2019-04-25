@@ -54,7 +54,7 @@ struct Master_Queue {
 	struct Queue* tail;
 };
 
-int retrieve_arguments(char* scheduler_type, char* input_file, char* output_file, int* default_weight, int* quantum, char** argv);
+int retrieve_arguments(char** scheduler_type, char** input_file, char** output_file, int* default_weight, int* quantum, char** argv);
 void enqueue(struct PKT_Params *pkt_params);
 int dequeue();
 struct Queue* search_flow(struct PKT_Params *pkt_params);
@@ -77,18 +77,14 @@ int main(int argc, char** argv) {
 		printf("Wrong number of arguments provided!\n");
 		return 1;
 	}
-	retrieve_arguments(scheduler_type, input_file, output_file, &default_weight, &quantum, argv);
+	retrieve_arguments(&scheduler_type, &input_file, &output_file, &default_weight, &quantum, argv);
 	input_fp = fopen(input_file, "r"); output_fp = fopen(output_file, "w");
 	if (strcmp(scheduler_type, WEIGHTED_ROUND_ROBIN) == 0) {
 		invoke_WRR_scheduler(input_fp, output_fp, default_weight);
 	}
 	else if (strcmp(scheduler_type, DEFICIT_ROUND_ROBIN) == 0) {
 		invoke_DRR_scheduler();
-	}
-
-
-
-	
+	}	
 	return 0;
 }
 
@@ -167,10 +163,10 @@ struct Queue* search_flow(struct PKT_Params *pkt_params) {
 }
 
 
-int retrieve_arguments(char* scheduler_type, char* input_file, char* output_file, int* default_weight, int* quantum, char** argv) {
-	scheduler_type = argv[1];
-	input_file = argv[2];
-	output_file = argv[3];
+int retrieve_arguments(char** scheduler_type, char** input_file, char** output_file, int* default_weight, int* quantum, char** argv) {
+	*scheduler_type = argv[1];
+	*input_file = argv[2];
+	*output_file = argv[3];
 	if ((*default_weight = atoi(argv[4])) == 0) {
 		printf("Bad default weight!\n");
 		return 1;
@@ -234,7 +230,7 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 			pkt_params->Sport = (int)strtoul(tempWord, NULL, 10);
 			break;
 		case D_ADD:
-			pkt_params->Dadd = (char*)strtoul(tempWord, NULL, 10);
+			pkt_params->Dadd = (char*) tempWord;
 			break;
 		case D_PORT:
 			pkt_params->Dport = (int)strtoul(tempWord, NULL, 10);
@@ -249,7 +245,7 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 		tempWord = strtok(NULL, " \t\r\n");
 		i++;
 	}
-	if (i == MAX_WORDS_IN_LINE) {
+	if (i < MAX_WORDS_IN_LINE) {
 		pkt_params->weight = default_weight;
 	}
 	return LINE_READ;

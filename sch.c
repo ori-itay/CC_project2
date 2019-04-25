@@ -16,6 +16,12 @@
 #define D_PORT 5
 #define LENGTH 6
 #define WEGIHT 7
+#define QUEUE_NOT_FIN 0
+#define QUEUE_FIN 1
+#define LINE_NOT_READ 0
+#define LINE_READ 1
+
+
 
 
 struct PKT_Params {
@@ -57,7 +63,8 @@ struct Node* allocate_node(struct PKT_Params *pkt_params);
 void invoke_WRR_scheduler(FILE *input_fp, FILE *output_fp, int default_weight);
 void invoke_DRR_scheduler();
 int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight);
-void serve_packet(int* queue_serve_count);
+void serve_packet(int* queue_serve_count, FILE * output_fp);
+void write_line_to_output(FILE *output_fp);
 
 
 struct Master_Queue master_queue;
@@ -129,7 +136,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 int dequeue() {
 	struct Node *tmp_node;
 	struct Queue *tmp_queue;
-	int ret = 0;
+	int ret = QUEUE_NOT_FIN;
 
 	tmp_node = master_queue.head->head;
 
@@ -140,7 +147,7 @@ int dequeue() {
 		tmp_queue = master_queue.head;
 		master_queue.head = master_queue.head->next_queue;
 		free(tmp_queue);
-		ret = 1;
+		ret = QUEUE_FIN;
 	}
 	free(tmp_node);
 	return ret;
@@ -184,13 +191,13 @@ void invoke_WRR_scheduler(FILE *input_fp, FILE * output_fp, int default_weight) 
 	long int old_local_time = local_time;
 	struct PKT_Params pkt_params;
 
-	while (read_line(&pkt_params, input_fp, default_weight) == 0) {
+	while (read_line(&pkt_params, input_fp, default_weight)) {
 		while (pkt_params.Time >= local_time) {
 			if (old_local_time != local_time) {
 				queue_serve_count = 0;
 				old_local_time = local_time;
 			}	
-			serve_packet(&queue_serve_count);
+			serve_packet(&queue_serve_count, output_fp);
 		}
 		enqueue(&pkt_params); /* if the right queue exists, add the node. else, make new queue, add the node*/
 	}
@@ -207,7 +214,7 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 	char *tempWord;
 
 	if (fgets(line, MAX_LINE_LEN, input_fp) == NULL) {
-		return -1;
+		return LINE_NOT_READ;
 	}
 
 	tempWord = strtok(line, " \t\r\n");
@@ -245,23 +252,41 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 	if (i == MAX_WORDS_IN_LINE) {
 		pkt_params->weight = default_weight;
 	}
-	return 0;
+	return LINE_READ;
 }
 
 
-void serve_packet(int* queue_serve_count) {
-	int fin_queue;
+void serve_packet(int* queue_serve_count, FILE * output_fp) {
+	int queue_fin;
 
 	if (master_queue.head == NULL)
 		return;
 	
-	/*write here to output file*/
-	fin_queue = dequeue();
+	write_line_to_output(output_fp);	
+	queue_fin = dequeue();
 	(*queue_serve_count)++;
-	if (*queue_serve_count == master_queue.head->weight || fin_queue) {
+	if (*queue_serve_count == master_queue.head->weight || queue_fin) {
 		*queue_serve_count = 0;
 		master_queue.tail = master_queue.head;
 		master_queue.head = master_queue.head->next_queue;
 	}
+}
+
+void write_line_to_output(FILE *output_fp) {
+	char line[MAX_LINE_LEN] = { 0 };
+	long int time = master_queue.head->head->time;
+	long int pkt_id = master_queue.head->head->pktID;
+	int bytes_wrote;
+
+	sprintf(line, "%ld: %ld\n", time, pkt_id);
+	bytes_wrote = fwrite(line, sizeof(char), strlen(line), output_fp);
+	if (bytes_wrote <= 0) {
+		printf("Error writing to output file. exiting... \n");
+		exit(1);
+	}
+	return;
+}
+
+void invoke_DRR_scheduler() {
 
 }

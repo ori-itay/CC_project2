@@ -20,13 +20,15 @@
 #define QUEUE_FIN 1
 #define LINE_NOT_READ 0
 #define LINE_READ 1
+#define EMPTY_QUEUE 0
+#define NOT_EMPTY_QUEUE 1
 
 
 
 
 struct PKT_Params {
 	unsigned int Sport, Dport, weight, length;
-	char *Sadd, *Dadd;
+	char Sadd[MAX_LINE_LEN], Dadd[MAX_LINE_LEN];
 	long int pktID, Time;
 };
 
@@ -62,8 +64,8 @@ struct Queue* allocate_queue(struct PKT_Params *pkt_params);
 struct Node* allocate_node(struct PKT_Params *pkt_params);
 void invoke_WRR_scheduler(FILE *input_fp, FILE *output_fp, int default_weight);
 void invoke_DRR_scheduler();
-int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight);
-void serve_packet(int* queue_serve_count, FILE * output_fp);
+int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight, int *was_enqueued);
+int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_sent);
 void write_line_to_output(FILE *output_fp);
 
 
@@ -84,7 +86,9 @@ int main(int argc, char** argv) {
 	}
 	else if (strcmp(scheduler_type, DEFICIT_ROUND_ROBIN) == 0) {
 		invoke_DRR_scheduler();
-	}	
+	}
+	fclose(input_fp);
+	fclose(output_fp);
 	return 0;
 }
 
@@ -95,6 +99,9 @@ struct Queue* allocate_queue(struct PKT_Params *pkt_params) {
 	queue->Dadd = pkt_params->Dadd;
 	queue->Dport = pkt_params->Dport;
 	queue->weight = pkt_params->weight;
+	queue->head = NULL;
+	queue->tail = NULL;
+	queue->next_queue = NULL;
 	return queue;
 }
 
@@ -112,19 +119,29 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	struct Queue *to_insert_queue;
 	struct Node *pkt_node = allocate_node(pkt_params);
 
+	/*insert queue (flow)*/
 	if (master_queue.head == NULL) {
 		master_queue.head = allocate_queue(pkt_params);
-		master_queue.tail = master_queue.head;
+		master_queue.tail = master_queue.head;	
+		to_insert_queue = master_queue.tail;
 	}
-	if ( (to_insert_queue = search_flow(pkt_params)) == NULL) {
+	else if ((to_insert_queue = search_flow(pkt_params)) == NULL) {
 		/*new flow type*/
 		to_insert_queue = allocate_queue(pkt_params);
+		to_insert_queue->next_queue = master_queue.head;
+		master_queue.tail->next_queue = to_insert_queue;
+		master_queue.tail = master_queue.tail->next_queue;
 	}
-	to_insert_queue->tail->next = pkt_node;
-	to_insert_queue->tail = to_insert_queue->tail->next;
+	
+	/*insert node*/
 	if (to_insert_queue->head == NULL) {
 		/*first element in queue*/
-		to_insert_queue->head = to_insert_queue->tail;
+		to_insert_queue->head = pkt_node;
+		to_insert_queue->tail = to_insert_queue->head;
+	}
+	else {
+		to_insert_queue->tail->next = pkt_node;
+		to_insert_queue->tail = to_insert_queue->tail->next;
 	}
 	return;
 }
@@ -158,6 +175,7 @@ struct Queue* search_flow(struct PKT_Params *pkt_params) {
 		strcmp(curr_queue->Sadd, pkt_params->Sadd) == 0 &&
 		curr_queue->Sport == pkt_params->Sport )
 			return curr_queue;
+		curr_queue = curr_queue->next_queue;
 	}
 	return NULL;
 }
@@ -169,41 +187,41 @@ int retrieve_arguments(char** scheduler_type, char** input_file, char** output_f
 	*output_file = argv[3];
 	if ((*default_weight = atoi(argv[4])) == 0) {
 		printf("Bad default weight!\n");
-		return 1;
+		exit(1);
 	}
 	if ((*quantum = atoi(argv[5])) == 0) {
 		printf("Bad quantum!\n");
-		return 1;
+		exit(1);
 	}
 	return 0;
 }
 
 
+void invoke_WRR_scheduler(FILE *input_fp, FILE *output_fp, int default_weight) {
 
-
-void invoke_WRR_scheduler(FILE *input_fp, FILE * output_fp, int default_weight) {
-
-	int queue_serve_count = 0;
+	int queue_serve_count = 0, curr_queue_bytes_sent = 0, read_line_value, queue_state, was_enqueued = 1;
 	long int old_local_time = local_time;
 	struct PKT_Params pkt_params;
 
-	while (read_line(&pkt_params, input_fp, default_weight)) {
-		while (pkt_params.Time >= local_time) {
-			if (old_local_time != local_time) {
-				queue_serve_count = 0;
-				old_local_time = local_time;
-			}	
-			serve_packet(&queue_serve_count, output_fp);
+	while (1) {	
+		while (was_enqueued && (read_line_value = read_line(&pkt_params, input_fp, default_weight, &was_enqueued))
+			&& pkt_params.Time <= local_time) {
+			enqueue(&pkt_params);
+			was_enqueued = 1;
 		}
-		enqueue(&pkt_params); /* if the right queue exists, add the node. else, make new queue, add the node*/
-	}
-	 /* when finished serving packet, read lines and enqueue until local_time>=time_of_packet*/
-	/* in case scheudler can send few packets, hwo to handle that case.*/
-	/* hold a counter, in case of equality, check who has minimum counter. every packet arrive increase counter*/
 
+		if (!was_enqueued && pkt_params.Time <= local_time && read_line_value){
+			enqueue(&pkt_params);
+			was_enqueued = 1;
+		}
+		queue_state = serve_packet(&queue_serve_count, output_fp, &curr_queue_bytes_sent);
+		if (!queue_state && !read_line_value) {
+			break;
+		}
+	}
 }
 
-int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight) {
+int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight, int *was_enqueued) {
 
 	char line[MAX_LINE_LEN];
 	int i = 0;
@@ -213,6 +231,7 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 		return LINE_NOT_READ;
 	}
 
+	*was_enqueued = 0;
 	tempWord = strtok(line, " \t\r\n");
 	while (tempWord != NULL && i < MAX_WORDS_IN_LINE) {
 		switch (i)
@@ -224,13 +243,13 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 			pkt_params->Time = strtoul(tempWord, NULL, 10);
 			break;
 		case S_ADD:
-			pkt_params->Sadd = (char*) tempWord;
+			strcpy(pkt_params->Sadd, tempWord);
 			break;
 		case S_PORT:
 			pkt_params->Sport = (int)strtoul(tempWord, NULL, 10);
 			break;
 		case D_ADD:
-			pkt_params->Dadd = (char*) tempWord;
+			strcpy(pkt_params->Dadd, tempWord);
 			break;
 		case D_PORT:
 			pkt_params->Dport = (int)strtoul(tempWord, NULL, 10);
@@ -252,29 +271,39 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight)
 }
 
 
-void serve_packet(int* queue_serve_count, FILE * output_fp) {
+int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_sent) {
 	int queue_fin;
 
 	if (master_queue.head == NULL)
-		return;
+		return EMPTY_QUEUE;
+
+	if (master_queue.head->head->length > *curr_queue_bytes_sent) {
+		(*curr_queue_bytes_sent)++;
+		local_time++;
+		return NOT_EMPTY_QUEUE;
+	}
 	
-	write_line_to_output(output_fp);	
+	write_line_to_output(output_fp);
 	queue_fin = dequeue();
+	*curr_queue_bytes_sent = 0;
 	(*queue_serve_count)++;
-	if (*queue_serve_count == master_queue.head->weight || queue_fin) {
+	if(queue_fin)
 		*queue_serve_count = 0;
+	else if (*queue_serve_count == master_queue.head->weight) {
 		master_queue.tail = master_queue.head;
 		master_queue.head = master_queue.head->next_queue;
+		*queue_serve_count = 0;
 	}
+	return NOT_EMPTY_QUEUE;
 }
 
 void write_line_to_output(FILE *output_fp) {
 	char line[MAX_LINE_LEN] = { 0 };
-	long int time = master_queue.head->head->time;
+	long int length = master_queue.head->head->length;
 	long int pkt_id = master_queue.head->head->pktID;
 	int bytes_wrote;
 
-	sprintf(line, "%ld: %ld\n", time, pkt_id);
+	sprintf(line, "%ld: %ld\n", local_time - length, pkt_id);
 	bytes_wrote = fwrite(line, sizeof(char), strlen(line), output_fp);
 	if (bytes_wrote <= 0) {
 		printf("Error writing to output file. exiting... \n");

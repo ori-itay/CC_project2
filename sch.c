@@ -123,8 +123,8 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	/*insert queue (flow)*/
 	if (master_queue.head == NULL) {
 		master_queue.head = allocate_queue(pkt_params);
+		master_queue.tail = master_queue.head;
 		master_queue.head->next_queue = master_queue.tail;
-		master_queue.tail = master_queue.head;	
 		to_insert_queue = master_queue.tail;
 	}
 	else if ((to_insert_queue = search_flow(pkt_params)) == NULL) {
@@ -140,6 +140,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	if (to_insert_queue->head == NULL) {
 		/*first element in queue*/
 		to_insert_queue->head = pkt_node;
+		to_insert_queue->head->next = to_insert_queue->tail;
 		to_insert_queue->tail = to_insert_queue->head;
 	}
 	else {
@@ -283,8 +284,10 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight,
 int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_sent) {
 	int queue_fin;
 
-	if (master_queue.head == NULL)
+	if (master_queue.head == NULL) {
+		local_time++;
 		return EMPTY_QUEUE;
+	}
 		
 	if (master_queue.head->head->length > *curr_queue_bytes_sent) {
 		(*curr_queue_bytes_sent)++;

@@ -161,13 +161,16 @@ int dequeue() {
 	}
 	else {
 		tmp_queue = master_queue.head;
-		master_queue.head = master_queue.head->next_queue;
-		master_queue.tail->next_queue = master_queue.head;
-		free(tmp_queue);
-		ret = QUEUE_FIN;
 		if (master_queue.head == master_queue.tail) {
 			master_queue.head = NULL;
 		}
+		else {
+			master_queue.head = master_queue.head->next_queue;
+			master_queue.tail->next_queue = master_queue.head;
+		}
+		free(tmp_queue);
+		ret = QUEUE_FIN;
+
 	}
 
 	free(tmp_node);

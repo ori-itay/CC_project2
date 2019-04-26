@@ -26,6 +26,7 @@
 
 
 
+
 struct PKT_Params {
 	unsigned int Sport, Dport, weight, length;
 	char Sadd[MAX_LINE_LEN], Dadd[MAX_LINE_LEN];
@@ -122,6 +123,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	/*insert queue (flow)*/
 	if (master_queue.head == NULL) {
 		master_queue.head = allocate_queue(pkt_params);
+		master_queue.head->next_queue = master_queue.tail;
 		master_queue.tail = master_queue.head;	
 		to_insert_queue = master_queue.tail;
 	}
@@ -132,6 +134,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 		master_queue.tail->next_queue = to_insert_queue;
 		master_queue.tail = master_queue.tail->next_queue;
 	}
+	master_queue.tail->next_queue = master_queue.head;
 	
 	/*insert node*/
 	if (to_insert_queue->head == NULL) {
@@ -159,9 +162,14 @@ int dequeue() {
 	else {
 		tmp_queue = master_queue.head;
 		master_queue.head = master_queue.head->next_queue;
+		master_queue.tail->next_queue = master_queue.head;
 		free(tmp_queue);
 		ret = QUEUE_FIN;
+		if (master_queue.head == master_queue.tail) {
+			master_queue.head = NULL;
+		}
 	}
+
 	free(tmp_node);
 	return ret;
 }
@@ -169,13 +177,14 @@ int dequeue() {
 struct Queue* search_flow(struct PKT_Params *pkt_params) {
 	struct Queue *curr_queue = master_queue.head;
 
-	while (curr_queue != NULL) {
+	while (1) {
 		if ( strcmp(curr_queue->Dadd, pkt_params->Dadd) == 0 &&
 		curr_queue->Dport == pkt_params->Dport &&
 		strcmp(curr_queue->Sadd, pkt_params->Sadd) == 0 &&
 		curr_queue->Sport == pkt_params->Sport )
 			return curr_queue;
 		curr_queue = curr_queue->next_queue;
+		if (curr_queue == master_queue.head) { break; }
 	}
 	return NULL;
 }
@@ -273,7 +282,7 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 
 	if (master_queue.head == NULL)
 		return EMPTY_QUEUE;
-
+		
 	if (master_queue.head->head->length > *curr_queue_bytes_sent) {
 		(*curr_queue_bytes_sent)++;
 		local_time++;
@@ -291,6 +300,7 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 		master_queue.head = master_queue.head->next_queue;
 		*queue_serve_count = 0;
 	}
+
 	return NOT_EMPTY_QUEUE;
 }
 

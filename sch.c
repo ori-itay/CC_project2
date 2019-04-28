@@ -8,6 +8,7 @@
 #define DEFICIT_ROUND_ROBIN "DRR"
 #define MAX_LINE_LEN 100
 #define MAX_WORDS_IN_LINE 8
+#define IP_ADDR_LEN 16
 #define PKT_ID 0
 #define TIME 1
 #define S_ADD 2
@@ -46,8 +47,8 @@ struct Queue {
 	struct Queue* next_queue;
 	unsigned int Sport;
 	unsigned int Dport;
-	char *Sadd;
-	char *Dadd;
+	char Sadd[IP_ADDR_LEN];
+	char Dadd[IP_ADDR_LEN];
 	int weight;
 
 };
@@ -95,9 +96,9 @@ int main(int argc, char** argv) {
 
 struct Queue* allocate_queue(struct PKT_Params *pkt_params) {
 	struct Queue* queue = (struct Queue*) malloc(sizeof(struct Queue));
-	queue->Sadd = pkt_params->Sadd;
+	strcpy(queue->Sadd, pkt_params->Sadd);
 	queue->Sport = pkt_params->Sport;
-	queue->Dadd = pkt_params->Dadd;
+	strcpy(queue->Dadd, pkt_params->Dadd);
 	queue->Dport = pkt_params->Dport;
 	queue->weight = pkt_params->weight;
 	queue->head = NULL;
@@ -126,15 +127,16 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 		master_queue.tail = master_queue.head;
 		master_queue.head->next_queue = master_queue.tail;
 		to_insert_queue = master_queue.tail;
+		master_queue.tail->next_queue = master_queue.head;
 	}
 	else if ((to_insert_queue = search_flow(pkt_params)) == NULL) {
 		/*new flow type*/
 		to_insert_queue = allocate_queue(pkt_params);
-		//to_insert_queue->next_queue = master_queue.head; // problematic line?
+		to_insert_queue->next_queue = master_queue.head;
 		master_queue.tail->next_queue = to_insert_queue;
-		master_queue.tail = master_queue.tail->next_queue;
+		master_queue.tail = to_insert_queue;
 	}
-	master_queue.tail->next_queue = master_queue.head;
+	
 	
 	/*insert node*/
 	if (to_insert_queue->head == NULL) {
@@ -293,6 +295,13 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 		(*curr_queue_bytes_sent)++;
 		local_time++;
 		return NOT_EMPTY_QUEUE;
+	}
+	if (master_queue.head == NULL && local_time < 1057718) {
+		printf("NULL\n");
+	}
+	else if (local_time < 1057718) {
+		printf("TIME: %d, master queue tail->next flow: %s, %d, %s, %d\n",
+			local_time, master_queue.tail->next_queue->Sadd, master_queue.tail->next_queue->Sport, master_queue.tail->next_queue->Dadd, master_queue.tail->next_queue->Dport);
 	}
 	
 	write_line_to_output(output_fp);

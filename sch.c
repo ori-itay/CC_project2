@@ -56,6 +56,8 @@ struct Queue {
 struct Master_Queue {
 	struct Queue* head;
 	struct Queue* tail;
+	struct Queue* first_element;
+	struct Queue* queue_before_head;
 };
 
 int retrieve_arguments(char** scheduler_type, char** input_file, char** output_file, int* default_weight, int* quantum, char** argv);
@@ -122,21 +124,19 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	struct Node *pkt_node = allocate_node(pkt_params);
 
 	/*insert queue (flow)*/
-	if (master_queue.head == NULL) {
+	if (master_queue.first_element == NULL) {
 		master_queue.head = allocate_queue(pkt_params);
 		master_queue.tail = master_queue.head;
-		master_queue.head->next_queue = master_queue.tail;
-		to_insert_queue = master_queue.tail;
-		master_queue.tail->next_queue = master_queue.head;
+		master_queue.first_element = master_queue.head;
+		master_queue.head->next_queue = master_queue.tail;	
+		to_insert_queue = master_queue.head;
 	}
 	else if ((to_insert_queue = search_flow(pkt_params)) == NULL) {
 		/*new flow type*/
 		to_insert_queue = allocate_queue(pkt_params);
-		to_insert_queue->next_queue = master_queue.head;
 		master_queue.tail->next_queue = to_insert_queue;
 		master_queue.tail = to_insert_queue;
 	}
-	
 	
 	/*insert node*/
 	if (to_insert_queue->head == NULL) {
@@ -164,12 +164,26 @@ int dequeue() {
 	}
 	else {
 		tmp_queue = master_queue.head;
-		if (master_queue.head == master_queue.tail) {
+		if (master_queue.first_element == master_queue.tail) {
+			master_queue.first_element = NULL;
 			master_queue.head = NULL;
+			master_queue.tail = NULL;
+		}
+		else if(master_queue.head->next_queue != NULL){
+			if (master_queue.head != master_queue.first_element) {
+				master_queue.queue_before_head->next_queue = master_queue.head->next_queue;
+			}
+			else {
+				master_queue.first_element = master_queue.first_element->next_queue;
+				//master_queue.queue_before_head = master_queue.first_element;
+			}
+			master_queue.head = master_queue.head->next_queue;
 		}
 		else {
-			master_queue.head = master_queue.head->next_queue;
-			master_queue.tail->next_queue = master_queue.head;
+			master_queue.tail = master_queue.queue_before_head;
+			master_queue.tail->next_queue = NULL;
+			master_queue.head = master_queue.first_element;
+			master_queue.queue_before_head = NULL;
 		}
 		free(tmp_queue);
 		ret = QUEUE_FIN;
@@ -181,7 +195,7 @@ int dequeue() {
 }
 
 struct Queue* search_flow(struct PKT_Params *pkt_params) {
-	struct Queue *curr_queue = master_queue.head;
+	struct Queue *curr_queue = master_queue.first_element;
 
 	while (1) {
 		if ( strcmp(curr_queue->Dadd, pkt_params->Dadd) == 0 &&
@@ -190,7 +204,7 @@ struct Queue* search_flow(struct PKT_Params *pkt_params) {
 		curr_queue->Sport == pkt_params->Sport )
 			return curr_queue;
 		curr_queue = curr_queue->next_queue;
-		if (curr_queue == master_queue.head) { break; }
+		if (curr_queue == master_queue.first_element || curr_queue == NULL) { break; }
 	}
 	return NULL;
 }
@@ -290,7 +304,7 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 		local_time++;
 		return EMPTY_QUEUE;
 	}
-		
+
 	if (master_queue.head->head->length > *curr_queue_bytes_sent) {
 		(*curr_queue_bytes_sent)++;
 		local_time++;
@@ -300,8 +314,8 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 		printf("NULL\n");
 	}
 	else if (local_time < 1057718) {
-		printf("TIME: %d, master queue tail->next flow: %s, %d, %s, %d\n",
-			local_time, master_queue.tail->next_queue->Sadd, master_queue.tail->next_queue->Sport, master_queue.tail->next_queue->Dadd, master_queue.tail->next_queue->Dport);
+		//printf("TIME: %d, master queue tail->next flow: %s, %d, %s, %d\n",
+			//local_time, master_queue.tail->next_queue->Sadd, master_queue.tail->next_queue->Sport, master_queue.tail->next_queue->Dadd, master_queue.tail->next_queue->Dport);
 	}
 	
 	write_line_to_output(output_fp);
@@ -311,10 +325,18 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 	if(queue_fin)
 		*queue_serve_count = 0;
 	else if (*queue_serve_count == master_queue.head->weight) {
-		master_queue.tail = master_queue.head;
+		master_queue.queue_before_head = master_queue.head;
 		master_queue.head = master_queue.head->next_queue;
 		*queue_serve_count = 0;
 	}
+	if (master_queue.head == NULL) {
+		master_queue.head = master_queue.first_element;
+		master_queue.queue_before_head = NULL;
+	}
+	if (master_queue.head != NULL && master_queue.head == master_queue.first_element->next_queue) {
+		master_queue.queue_before_head = master_queue.first_element;
+	}
+
 
 	return NOT_EMPTY_QUEUE;
 }

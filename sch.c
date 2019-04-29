@@ -160,26 +160,32 @@ int dequeue() {
 	tmp_node = master_queue.head->head;
 
 	if (master_queue.head->head != master_queue.head->tail) {
+		/*advance in the same flow*/
 		master_queue.head->head = master_queue.head->head->next;
 	}
 	else {
+		/*current flow ended*/
 		tmp_queue = master_queue.head;
 		if (master_queue.first_element == master_queue.tail) {
+			/*all flows ended*/
 			master_queue.first_element = NULL;
 			master_queue.head = NULL;
 			master_queue.tail = NULL;
 		}
 		else if(master_queue.head->next_queue != NULL){
+			/*current flow is not the tail flow*/
 			if (master_queue.head != master_queue.first_element) {
+				/*current flow is not the first flow*/
 				master_queue.queue_before_head->next_queue = master_queue.head->next_queue;
 			}
 			else {
+				/*current flow is the first flow*/
 				master_queue.first_element = master_queue.first_element->next_queue;
-				//master_queue.queue_before_head = master_queue.first_element;
 			}
 			master_queue.head = master_queue.head->next_queue;
 		}
 		else {
+			/*current flow is the tail flow*/
 			master_queue.tail = master_queue.queue_before_head;
 			master_queue.tail->next_queue = NULL;
 			master_queue.head = master_queue.first_element;
@@ -187,9 +193,7 @@ int dequeue() {
 		}
 		free(tmp_queue);
 		ret = QUEUE_FIN;
-
 	}
-
 	free(tmp_node);
 	return ret;
 }
@@ -235,7 +239,6 @@ void invoke_WRR_scheduler(FILE *input_fp, FILE *output_fp, int default_weight) {
 			enqueue(&pkt_params);
 			was_enqueued = 1;
 		}
-
 		if (!was_enqueued && pkt_params.Time <= local_time && read_line_value){
 			enqueue(&pkt_params);
 			was_enqueued = 1;
@@ -298,7 +301,7 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight,
 
 
 int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_sent) {
-	int queue_fin;
+	int is_curr_flow_fin;
 
 	if (master_queue.head == NULL) {
 		local_time++;
@@ -310,19 +313,12 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 		local_time++;
 		return NOT_EMPTY_QUEUE;
 	}
-	if (master_queue.head == NULL && local_time < 1057718) {
-		printf("NULL\n");
-	}
-	else if (local_time < 1057718) {
-		//printf("TIME: %d, master queue tail->next flow: %s, %d, %s, %d\n",
-			//local_time, master_queue.tail->next_queue->Sadd, master_queue.tail->next_queue->Sport, master_queue.tail->next_queue->Dadd, master_queue.tail->next_queue->Dport);
-	}
 	
 	write_line_to_output(output_fp);
-	queue_fin = dequeue();
+	is_curr_flow_fin = dequeue();
 	*curr_queue_bytes_sent = 0;
 	(*queue_serve_count)++;
-	if(queue_fin)
+	if(is_curr_flow_fin)
 		*queue_serve_count = 0;
 	else if (*queue_serve_count == master_queue.head->weight) {
 		master_queue.queue_before_head = master_queue.head;
@@ -333,11 +329,9 @@ int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_
 		master_queue.head = master_queue.first_element;
 		master_queue.queue_before_head = NULL;
 	}
-	if (master_queue.head != NULL && master_queue.head == master_queue.first_element->next_queue) {
+	else if (master_queue.head == master_queue.first_element->next_queue) {
 		master_queue.queue_before_head = master_queue.first_element;
 	}
-
-
 	return NOT_EMPTY_QUEUE;
 }
 

@@ -27,10 +27,6 @@
 #define LINE_READ 1
 
 
-
-
-
-
 struct PKT_Params {
 	unsigned int Sport, Dport, weight, length;
 	char Sadd[MAX_LINE_LEN], Dadd[MAX_LINE_LEN];
@@ -75,10 +71,7 @@ void invoke_scheduler(FILE *input_fp, FILE *output_fp, int default_weight, int s
 int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight, int *was_enqueued);
 int serve_packet(int* queue_serve_count, FILE *output_fp, int *curr_queue_bytes_sent, int scheduler_type_num, int quantum);
 void write_line_to_output(FILE *output_fp, int scheduler_type_num);
-void devide_credits(int quantum);
-void update_queue_before_head();
 void free_all_flows();
-void print_queue();
 
 
 struct Master_Queue master_queue;
@@ -141,7 +134,6 @@ struct Node* allocate_node(struct PKT_Params *pkt_params) {
 	node->next = NULL;
 	return node;
 }
-
 
 void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue*/
 	struct Queue *to_insert_queue;
@@ -238,7 +230,6 @@ struct Queue* search_flow(struct PKT_Params *pkt_params) {
 	}
 	return NULL;
 }
-
 
 void invoke_scheduler(FILE *input_fp, FILE *output_fp, int default_weight, int scheduler_type_num, int quantum) {
 
@@ -396,34 +387,6 @@ void write_line_to_output(FILE *output_fp, int scheduler_type_num) {
 		exit(1);
 	}
 	return;
-}
-
-
-void print_queue() {
-	struct Queue *tmp_queue = master_queue.first_element;
-
-	printf("--------------------------------------------------------------------------------------------------------------\n");
-	while (tmp_queue != NULL) {
-		if (tmp_queue == master_queue.head)
-			printf("***head!***\n");
-		printf("time: %d. credit: %d.  queue: %s, %d, %s, %d. \n",local_time, tmp_queue->drr_credit,
-			tmp_queue->Sadd, tmp_queue->Sport, tmp_queue->Dadd, tmp_queue->Dport);
-		if(tmp_queue->head!=NULL)
-			printf("first_pkt_id:%d,  firstt_pkt_len: %d \n", tmp_queue->head->pktID, tmp_queue->head->length);
-		tmp_queue = tmp_queue->next_queue;
-	}
-}
-
-void update_queue_before_head() {
-	if (master_queue.head != master_queue.first_element &&
-		master_queue.queue_before_head->next_queue != master_queue.head) {
-		master_queue.queue_before_head = master_queue.first_element;
-		while (master_queue.queue_before_head->next_queue != master_queue.head) {
-			master_queue.queue_before_head = master_queue.queue_before_head->next_queue;
-		}
-	}
-	else if (master_queue.head == master_queue.first_element)
-		master_queue.queue_before_head = NULL;
 }
 
 void free_all_flows() {

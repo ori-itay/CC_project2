@@ -61,12 +61,13 @@ struct Master_Queue {
 	struct Queue* tail;
 	struct Queue* first_element;
 	struct Queue* queue_before_head;
+	int size;
 };
 
 int retrieve_arguments(int* scheduler_type_num, char** input_file, char** output_file, int* default_weight, int* quantum, char** argv);
 void enqueue(struct PKT_Params *pkt_params);
-int dequeue();
-int advance_flow();
+int dequeue(int scheduler_type_num);
+int advance_flow(int scheduler_type_num);
 struct Queue* search_flow(struct PKT_Params *pkt_params);
 struct Queue* allocate_queue(struct PKT_Params *pkt_params);
 struct Node* allocate_node(struct PKT_Params *pkt_params);
@@ -90,6 +91,7 @@ int main(int argc, char** argv) {
 		printf("Wrong number of arguments provided!\n");
 		return 1;
 	}
+	master_queue.size = 0;
 	retrieve_arguments(&scheduler_type_num, &input_file, &output_file, &default_weight, &quantum, argv);
 	input_fp = fopen(input_file, "r"); output_fp = fopen(output_file, "w");
 	invoke_scheduler(input_fp, output_fp, default_weight, scheduler_type_num, quantum);
@@ -146,7 +148,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	struct Node *pkt_node = allocate_node(pkt_params);
 
 	/*insert queue (flow)*/
-	if (master_queue.first_element == NULL) {
+	if (master_queue.size == 0) {
 		master_queue.head = allocate_queue(pkt_params);
 		master_queue.tail = master_queue.head;
 		master_queue.first_element = master_queue.head;
@@ -166,6 +168,7 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 		to_insert_queue->head = pkt_node;
 		to_insert_queue->head->next = to_insert_queue->tail;
 		to_insert_queue->tail = to_insert_queue->head;
+		master_queue.size++;
 	}
 	else {
 		to_insert_queue->tail->next = pkt_node;
@@ -174,24 +177,28 @@ void enqueue(struct PKT_Params *pkt_params) { /* enqueue to the end of the queue
 	return;
 }
 
-int dequeue() {
+int dequeue(int scheduler_type_num) {
 	struct Node *tmp_node = master_queue.head->head;	
 	int queue_status = CURR_FLOW_NOT_FIN;
 
-	if (master_queue.head->head != master_queue.head->tail) {
+	if (master_queue.head->head != NULL && master_queue.head->head != master_queue.head->tail) {
 		/*advance in the same flow*/
 		master_queue.head->head = master_queue.head->head->next;
 	}
 	else {
 		/*current flow ended*/
+		master_queue.size--;
 		master_queue.head->head = NULL;
-		queue_status = advance_flow();
+		master_queue.head->tail = NULL;
+		if(scheduler_type_num == DRR_TYPE)
+			//master_queue.head->drr_credit = 0;
+		queue_status = advance_flow(scheduler_type_num);
 	}
 	free(tmp_node);
 	return queue_status;
 }
 
-int advance_flow() {
+int advance_flow(int scheduler_type_num) {
 	struct Queue *head_flow_at_start_of_func = master_queue.head;
 
 	do {
@@ -204,8 +211,9 @@ int advance_flow() {
 			master_queue.queue_before_head = master_queue.head;
 			master_queue.head = master_queue.head->next_queue;
 		}
-		if (master_queue.head == head_flow_at_start_of_func) {
-			return ALL_FLOWS_ENDED;
+
+		if (scheduler_type_num == DRR_TYPE) {
+			break;
 		}
 	} while (master_queue.head->head == NULL);
 
@@ -247,8 +255,8 @@ void invoke_scheduler(FILE *input_fp, FILE *output_fp, int default_weight, int s
 			enqueue(&pkt_params);
 			was_enqueued = 1;
 		}
-		//update_queue_before_head();
 		queue_state = serve_packet(&queue_serve_count, output_fp, &curr_queue_bytes_sent, scheduler_type_num, quantum);
+		//update_queue_before_head();
 		if (queue_state == ALL_FLOWS_ENDED && read_line_value == LINE_NOT_READ) {
 			break;
 		}
@@ -304,81 +312,94 @@ int read_line(struct PKT_Params *pkt_params, FILE *input_fp, int default_weight,
 	return LINE_READ;
 }
 
-
 int serve_packet(int* queue_pkt_serve_count, FILE *output_fp, int *curr_queue_bytes_sent, int scheduler_type_num, int quantum) {
 	int queue_status;
 
-	if (master_queue.head == NULL && master_queue.first_element == NULL) {
+	if (master_queue.size == 0) {
 		local_time++;
 		return ALL_FLOWS_ENDED;
 	}
 
-	if (scheduler_type_num == DRR_TYPE && (*curr_queue_bytes_sent) == 0) {
-		while (1) {
+	if (scheduler_type_num == DRR_TYPE) {
+		while (*curr_queue_bytes_sent == 0) {
 			if (master_queue.head->head == NULL) {
 				/*no packets to send in this flow*/
 				master_queue.head->drr_credit = 0;
-				advance_flow();
-			}
-			/*
-			else if (master_queue.head->head->length > master_queue.head->drr_credit) {
-				master_queue.head->drr_credit += quantum * master_queue.head->weight;
-				advance_flow();
 			}
 			else {
-				master_queue.head->drr_credit -= master_queue.head->head->length;
-				(*curr_queue_bytes_sent)++;
-				local_time++;
-				break;
-			}*/
-			else{
 				master_queue.head->drr_credit += quantum * master_queue.head->weight;
-				if (master_queue.head->head->length > master_queue.head->drr_credit) {
-					/*not enough credit to send a packet*/
-					advance_flow();
+
+				struct Queue *tmp_queue = master_queue.first_element;
+				while (tmp_queue != master_queue.tail) {
+					if (strcmp(tmp_queue->Dadd, "174.192.103.58") == 0 && tmp_queue->Dport == 1276 &&
+						strcmp(tmp_queue->Sadd, "137.14.221.3") == 0 && tmp_queue->Sport == 4330
+						&& tmp_queue->drr_credit != tmp_credit && tmp_queue->drr_credit != 0) {
+						printf("time is: %d, flow credit is: %d\n", local_time, tmp_queue->drr_credit);
+						tmp_credit = tmp_queue->drr_credit;
+						break;
+					}
+					else {
+						tmp_queue = tmp_queue->next_queue;
+					}
 				}
-				else {
+				if (master_queue.head->drr_credit >= master_queue.head->head->length) {
+					/* start send packed*/
 					master_queue.head->drr_credit -= master_queue.head->head->length;
-					(*curr_queue_bytes_sent)++;
-					local_time++;
 					break;
 				}
 			}
+			advance_flow(scheduler_type_num);
 		}
-		return CURR_FLOW_NOT_FIN;
-	}
-	else if(scheduler_type_num == DRR_TYPE){
-		if ((*curr_queue_bytes_sent) < master_queue.head->head->length){
+		/*send packet*/
+		if ( *curr_queue_bytes_sent < master_queue.head->head->length) {
 			(*curr_queue_bytes_sent)++;
 			local_time++;
 			return CURR_FLOW_NOT_FIN;
 		}
-		else {
-			*curr_queue_bytes_sent = 0;
-		}
 	}
-	else if (master_queue.head->head->length > *curr_queue_bytes_sent) {
-		/*RR TYPE*/
+	else if (scheduler_type_num == WRR_TYPE && master_queue.head->head->length > *curr_queue_bytes_sent) {
+		/*RR TYPE - continue send packet*/
 		(*curr_queue_bytes_sent)++;
 		local_time++;
 		return CURR_FLOW_NOT_FIN;
 	}
 	//print_queue();
 	write_line_to_output(output_fp, scheduler_type_num);
-	queue_status = dequeue();
+	queue_status = dequeue(scheduler_type_num);
+	*curr_queue_bytes_sent = 0;
+	(*queue_pkt_serve_count)++;
 	if (scheduler_type_num == WRR_TYPE) {
-		*curr_queue_bytes_sent = 0;
-		(*queue_pkt_serve_count)++;
 		if (queue_status == CURR_FLOW_FIN)
 			*queue_pkt_serve_count = 0;
 		else if (*queue_pkt_serve_count == master_queue.head->weight) {
-			advance_flow();
+			/*got to weight limit - advance to next flow*/
+			advance_flow(scheduler_type_num);
 			*queue_pkt_serve_count = 0;
 		}
+		else {
+			*curr_queue_bytes_sent++;
+			local_time++;
+		}
+		return queue_status;
 	}
-	else if (queue_status == CURR_FLOW_NOT_FIN) {
-		/*DRR TYPE*/
-		advance_flow();
+	else if (queue_status == CURR_FLOW_NOT_FIN){
+		if (*queue_pkt_serve_count >= master_queue.head->weight) { 
+			/*got to weight limit - advance to next flow - maybe unneccesary*/
+			advance_flow(scheduler_type_num);
+			*queue_pkt_serve_count = 0;
+		}
+		else if (master_queue.head->drr_credit >= master_queue.head->head->length) {
+			master_queue.head->drr_credit -= master_queue.head->head->length;
+			(*curr_queue_bytes_sent)++;
+			local_time++;
+		}
+		else{
+			*queue_pkt_serve_count = 0;
+			advance_flow(scheduler_type_num);
+		}
+	}
+	else {
+		*queue_pkt_serve_count = 0;
 	}
 	return queue_status;
 }
@@ -402,20 +423,24 @@ void write_line_to_output(FILE *output_fp, int scheduler_type_num) {
 void devide_credits(int quantum) {
 	struct Queue *tmp_queue = master_queue.head;
 
-	advance_flow();
+	advance_flow(DRR_TYPE);
 	while (tmp_queue != master_queue.head) {
 		master_queue.head->drr_credit += quantum * master_queue.head->weight;
-		advance_flow();
+		advance_flow(DRR_TYPE);
 	}
 }
 
 void print_queue() {
 	struct Queue *tmp_queue = master_queue.first_element;
 
-	printf("--------------------------------------------------------------\n");
+	printf("--------------------------------------------------------------------------------------------------------------\n");
 	while (tmp_queue != NULL) {
-		printf("time: %d. credit: %d.  queue: %s, %d, %s, %d.next_pkt_id:%d,  next_pkt_len: %d \n",local_time, tmp_queue->drr_credit,
-			tmp_queue->Sadd, tmp_queue->Sport, tmp_queue->Dadd, tmp_queue->Dport, tmp_queue->head->pktID,tmp_queue->head->length);
+		if (tmp_queue == master_queue.head)
+			printf("***head!***\n");
+		printf("time: %d. credit: %d.  queue: %s, %d, %s, %d. \n",local_time, tmp_queue->drr_credit,
+			tmp_queue->Sadd, tmp_queue->Sport, tmp_queue->Dadd, tmp_queue->Dport);
+		if(tmp_queue->head!=NULL)
+			printf("first_pkt_id:%d,  firstt_pkt_len: %d \n", tmp_queue->head->pktID, tmp_queue->head->length);
 		tmp_queue = tmp_queue->next_queue;
 	}
 }
@@ -436,6 +461,8 @@ void free_all_flows() {
 	struct Queue *tmp_queue = master_queue.first_element;
 
 	while (master_queue.first_element->next_queue != NULL) {
+		if (master_queue.head->head == tmp_queue)
+			printf("----head!-----\n");
 		tmp_queue = master_queue.first_element;
 		master_queue.first_element = master_queue.first_element->next_queue;
 		free(tmp_queue);
